@@ -15,13 +15,14 @@
             --ndrrmc-orange: #ff9800;
             --ndrrmc-red: #f44336;
             --ndrrmc-green: #4caf50;
+            --ndrrmc-blue: #2196f3;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Inter', sans-serif; background: #0a0a0c; color: #fff; min-height: 100vh; }
         
         .header { background: #121214; border-bottom: 4px solid var(--ndrrmc-red); padding: 15px 30px; }
-        .header-content { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; }
+        .header-content { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; }
         
         .station-status-pill { padding: 5px 12px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; transition: 0.3s; }
         .status-online { background: rgba(76, 175, 80, 0.2); color: var(--ndrrmc-green); border: 1px solid var(--ndrrmc-green); }
@@ -30,7 +31,7 @@
         .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
         
         .main-display {
-            background: #18181b; border-radius: 12px; padding: 40px; text-align: center; margin-bottom: 20px; transition: 0.5s;
+            background: #18181b; border-radius: 12px; padding: 40px; text-align: center; margin-bottom: 20px;
             border: 1px solid #27272a;
         }
 
@@ -41,7 +42,7 @@
         .progress-bar { height: 100%; width: 0%; transition: 1s cubic-bezier(0.4, 0, 0.2, 1); }
 
         .log-section { background: #18181b; border-radius: 12px; padding: 20px; border: 1px solid #27272a; }
-        .log-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #27272a; }
+        .log-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #27272a; flex-wrap: wrap; gap: 10px; }
         
         .log-list { max-height: 400px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 12px; }
         .log-item { padding: 10px 0; border-bottom: 1px solid #27272a; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -51,16 +52,20 @@
         .btn-export { background: var(--ndrrmc-green); }
         .btn-export:hover { background: #3d8b40; }
 
+        /* DISTINCT LOG TYPE COLORS */
         .type-tag { padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-right: 10px; font-weight: bold; display: inline-block; }
-        .tag-alert { background: var(--ndrrmc-red); color: white; }
-        .tag-health { background: #3f3f46; color: #a1a1aa; }
+        .tag-alert { background: var(--ndrrmc-red); color: white; }           /* RED - Critical alerts */
+        .tag-event { background: var(--ndrrmc-orange); color: #000; }        /* ORANGE - Level changes */
+        .tag-water { background: var(--ndrrmc-yellow); color: #000; }        /* YELLOW - Water detected */
+        .tag-normal { background: var(--ndrrmc-green); color: #000; }        /* GREEN - Normal status */
+        .tag-system { background: #3f3f46; color: #a1a1aa; }                 /* GRAY - System messages */
 
         .critical-glow { box-shadow: 0 0 50px rgba(244, 67, 54, 0.25); border: 1px solid var(--ndrrmc-red); }
         
         @media (max-width: 768px) {
             .level-number { font-size: 70px; }
             .warning-label { font-size: 16px; }
-            .header-content { flex-direction: column; text-align: center; gap: 10px; }
+            .header-content { justify-content: center; text-align: center; }
             .log-item { flex-direction: column; align-items: flex-start; gap: 5px; }
         }
     </style>
@@ -70,22 +75,25 @@
 <div class="header">
     <div class="header-content">
         <div style="display:flex; align-items:center; gap:15px;">
-            <i class="fas fa-shield-alt" style="color:var(--ndrrmc-red); font-size: 28px;"></i>
+            <img src="https://alto.com.ph/src/ALTO_SIGN-header.png" 
+                 alt="ALTO Logo" 
+                 style="height: 45px; width: auto; display: block;"
+                 onerror="this.onerror=null; this.style.display='none';">
             <div>
                 <h1 style="font-size: 20px; letter-spacing: 1px;">DRM FLOOD COMMAND</h1>
                 <p style="font-size: 10px; color: #71717a; font-weight:600;">POTOTAN STATION | NDRRMC PROTOCOL</p>
             </div>
         </div>
-        <div id="stationPill" class="station-status-pill status-offline">Station Offline</div>
+        <div id="stationPill" class="station-status-pill status-offline">Offline</div>
     </div>
 </div>
 
 <div class="container">
     <div class="main-display" id="displayCard">
-        <p id="lastSeen" style="font-size: 11px; color: #71717a; font-weight:600;">AWAITING TELEMETRY...</p>
+        <p id="lastSeen" style="font-size: 11px; color: #71717a; font-weight:600;">AWAITING DATA...</p>
         <div class="level-number" id="levelNum">—</div>
         <div class="warning-label" id="warningLabel">INITIALIZING</div>
-        <p id="instructionText" style="margin-top: 20px; color: #a1a1aa; font-size: 15px; font-weight:500;">Connecting to encrypted MQTT broker...</p>
+        <p id="instructionText" style="margin-top: 20px; color: #a1a1aa; font-size: 15px; font-weight:500;">Connecting to MQTT broker...</p>
         
         <div class="progress-container">
             <div class="progress-bar" id="progressBar"></div>
@@ -94,9 +102,9 @@
 
     <div class="log-section">
         <div class="log-header">
-            <h3 style="font-size: 14px; color: #fff;">STATION HISTORY (MAX 2,000)</h3>
+            <h3 style="font-size: 14px; color: #fff;"><i class="fas fa-history"></i> INCIDENT LOG</h3>
             <div style="display:flex; gap:10px; flex-wrap: wrap;">
-                <button class="log-btn btn-export" onclick="exportToCSV()"><i class="fas fa-download"></i> EXPORT CSV</button>
+                <button class="log-btn btn-export" onclick="exportToCSV()"><i class="fas fa-download"></i> EXPORT</button>
                 <button class="log-btn" onclick="clearLogs()"><i class="fas fa-trash"></i> CLEAR</button>
             </div>
         </div>
@@ -115,27 +123,27 @@
     };
 
     let watchdogTimer;
+    let lastHeartbeatTime = 0;
+    let lastLoggedLevel = -1;
+    let lastLoggedWaterState = "";
     const client = new Paho.MQTT.Client(MQTT_CONFIG.host, MQTT_CONFIG.port, "pototan_web_" + Math.random().toString(16).slice(2, 8));
 
     const PROTOCOLS = [
-        { label: "NORMAL", color: "#4caf50", msg: "No flood threat detected. Water levels are within safe limits.", level: 0 },
-        { label: "YELLOW (AWARENESS)", color: "#ffeb3b", msg: "Low-lying areas should monitor river levels. Flooding is possible.", level: 1 },
-        { label: "ORANGE (PREPAREDNESS)", color: "#ff9800", msg: "Flooding is threatening. Communities are advised to prepare for evacuation.", level: 2 },
-        { label: "RED (EMERGENCY)", color: "#f44336", msg: "SEVERE FLOODING. Evacuate immediately to designated centers!", level: 3 }
+        { label: "NORMAL", color: "#4caf50", msg: "No flood threat detected. Water levels are within safe limits." },
+        { label: "YELLOW (AWARENESS)", color: "#ffeb3b", msg: "Low-lying areas should monitor river levels. Flooding is possible." },
+        { label: "ORANGE (PREPAREDNESS)", color: "#ff9800", msg: "Flooding is threatening. Communities are advised to prepare for evacuation." },
+        { label: "RED (EMERGENCY)", color: "#f44336", msg: "SEVERE FLOODING. Evacuate immediately to designated centers!" }
     ];
-
-    // --- Core Logic ---
 
     function resetWatchdog() {
         clearTimeout(watchdogTimer);
-        document.getElementById("stationPill").innerText = "Station Online";
+        document.getElementById("stationPill").innerText = "Online";
         document.getElementById("stationPill").className = "station-status-pill status-online";
         
-        // Timeout if no signal for 35 seconds
         watchdogTimer = setTimeout(() => {
-            document.getElementById("stationPill").innerText = "Station Offline / Down";
+            document.getElementById("stationPill").innerText = "Offline";
             document.getElementById("stationPill").className = "station-status-pill status-offline";
-            addLog("STATION SIGNAL LOST - Device may be powered down", "tag-alert");
+            addLog("⚠️ SIGNAL LOST - Station offline", "tag-system");
         }, 35000);
     }
 
@@ -152,7 +160,7 @@
         label.style.color = level == 1 ? data.color : "#000";
         
         document.getElementById("instructionText").innerText = data.msg;
-        document.getElementById("lastSeen").innerText = "LAST TELEMETRY: " + new Date().toLocaleTimeString();
+        document.getElementById("lastSeen").innerHTML = "LAST UPDATE: " + new Date().toLocaleTimeString();
         
         const bar = document.getElementById("progressBar");
         bar.style.width = (level / 3 * 100) + "%";
@@ -166,18 +174,26 @@
         const list = document.getElementById("logList");
         const logEntry = { timestamp: Date.now(), message: msg, type: tagClass };
 
-        // Save to LocalStorage
         let history = JSON.parse(localStorage.getItem("flood_history") || "[]");
         history.unshift(logEntry);
         if (history.length > MQTT_CONFIG.maxLogs) history.pop();
         localStorage.setItem("flood_history", JSON.stringify(history));
 
-        // UI Update
         const item = document.createElement("div");
         item.className = "log-item";
+        
+        let typeLabel = "";
+        let typeTagClass = tagClass;
+        
+        if (tagClass === 'tag-alert') typeLabel = '🔴 CRITICAL';
+        else if (tagClass === 'tag-event') typeLabel = '🟠 LEVEL CHANGE';
+        else if (tagClass === 'tag-water') typeLabel = '💧 WATER DETECTED';
+        else if (tagClass === 'tag-normal') typeLabel = '🟢 NORMAL';
+        else typeLabel = '⚙️ SYSTEM';
+        
         item.innerHTML = `
             <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                <span class="type-tag ${tagClass}">${tagClass === 'tag-alert' ? 'ALERT' : 'HEALTH'}</span>
+                <span class="type-tag ${typeTagClass}">${typeLabel}</span>
                 <span>${msg}</span>
             </div>
             <span style="color:#52525b; font-size: 11px;">${new Date().toLocaleTimeString()}</span>
@@ -190,13 +206,17 @@
         const history = JSON.parse(localStorage.getItem("flood_history") || "[]");
         if (!history.length) return alert("No logs to export.");
 
-        let csv = "Timestamp,Date,Time,Type,Message\n";
-        history.forEach(log => {
+        let csv = "Date,Time,Type,Message\n";
+        history.reverse().forEach(log => {
             const d = new Date(log.timestamp);
-            const type = log.type === 'tag-alert' ? "ALERT" : "HEALTH";
-            // Escape commas in message
+            let type = "SYSTEM";
+            if (log.type === 'tag-alert') type = "CRITICAL";
+            else if (log.type === 'tag-event') type = "LEVEL CHANGE";
+            else if (log.type === 'tag-water') type = "WATER DETECTED";
+            else if (log.type === 'tag-normal') type = "NORMAL";
+            
             const cleanMsg = log.message.replace(/,/g, ";");
-            csv += `${log.timestamp},${d.toLocaleDateString()},${d.toLocaleTimeString()},${type},${cleanMsg}\n`;
+            csv += `${d.toLocaleDateString()},${d.toLocaleTimeString()},${type},${cleanMsg}\n`;
         });
 
         const blob = new Blob([csv], { type: 'text/csv' });
@@ -206,33 +226,35 @@
         a.download = `Pototan_Flood_Report_${new Date().toISOString().slice(0,10)}.csv`;
         a.click();
         window.URL.revokeObjectURL(url);
-        addLog("Data history exported to CSV file", "tag-health");
     }
 
     function clearLogs() {
-        if(confirm("Permanently delete all stored logs?")) {
+        if(confirm("Delete all stored logs?")) {
             localStorage.removeItem("flood_history");
             document.getElementById("logList").innerHTML = "";
-            addLog("System logs cleared by administrator", "tag-health");
+            addLog("Logs cleared by administrator", "tag-system");
         }
     }
 
     function loadSavedHistory() {
         const savedHistory = JSON.parse(localStorage.getItem("flood_history") || "[]");
         if (savedHistory.length > 0) {
-            // Display last known state (check for level in message)
-            const lastAlert = savedHistory.find(log => log.message.includes("Level"));
-            if (lastAlert) {
-                const levelMatch = lastAlert.message.match(/Level\s+(\d)/);
-                if (levelMatch) updateUI(parseInt(levelMatch[1]));
-            }
-            // Load logs into UI (most recent first)
             savedHistory.slice(0, MQTT_CONFIG.visibleLogs).forEach(log => {
                 const item = document.createElement("div");
                 item.className = "log-item";
+                
+                let typeLabel = "";
+                let typeTagClass = log.type;
+                
+                if (log.type === 'tag-alert') typeLabel = '🔴 CRITICAL';
+                else if (log.type === 'tag-event') typeLabel = '🟠 LEVEL CHANGE';
+                else if (log.type === 'tag-water') typeLabel = '💧 WATER DETECTED';
+                else if (log.type === 'tag-normal') typeLabel = '🟢 NORMAL';
+                else typeLabel = '⚙️ SYSTEM';
+                
                 item.innerHTML = `
                     <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                        <span class="type-tag ${log.type}">${log.type === 'tag-alert' ? 'ALERT' : 'HEALTH'}</span>
+                        <span class="type-tag ${typeTagClass}">${typeLabel}</span>
                         <span>${log.message}</span>
                     </div>
                     <span style="color:#52525b; font-size: 11px;">${new Date(log.timestamp).toLocaleTimeString()}</span>
@@ -242,51 +264,85 @@
         }
     }
 
-    // --- MQTT Connection ---
-
+    // MQTT Connection - SINGLE LOG ENTRY PER EVENT
     client.onMessageArrived = (msg) => {
         resetWatchdog();
+        
         try {
             const data = JSON.parse(msg.payloadString);
             const level = data.level !== undefined ? data.level : 0;
+            
+            lastHeartbeatTime = Date.now();
             updateUI(level);
-
+            
+            // Heartbeat: No log entry
             if (data.heartbeat) {
-                addLog(`Heartbeat received - Current flood level: ${level}`, "tag-health");
-            } else if (data.evacuate !== undefined || data.sensor1 !== undefined) {
-                // This is a status update
-                const sensorStatus = [];
-                if (data.sensor1 === 1) sensorStatus.push("Sensor 1");
-                if (data.sensor2 === 1) sensorStatus.push("Sensor 2");
-                if (data.sensor3 === 1) sensorStatus.push("Sensor 3");
-                
-                if (sensorStatus.length > 0) {
-                    addLog(`ALERT: Water detected on ${sensorStatus.join(", ")} - Level ${level}`, "tag-alert");
-                } else {
-                    addLog(`Status update - Flood level: ${level}`, "tag-health");
-                }
-            } else {
-                addLog(`Telemetry received - Flood level: ${level}`, "tag-health");
+                return;
             }
+            
+            // Check for water detection
+            const activeSensors = [];
+            if (data.sensor1 === 1) activeSensors.push("Low");
+            if (data.sensor2 === 1) activeSensors.push("Mid");
+            if (data.sensor3 === 1) activeSensors.push("High");
+            
+            const waterState = activeSensors.join("/");
+            const levelNames = ["NORMAL", "WARNING", "SEVERE", "CRITICAL"];
+            
+            // Evacuation order (highest priority) - CRITICAL
+            if (data.evacuate === true) {
+                addLog(`🚨 EVACUATION ORDER - Level ${level} (${levelNames[level]})`, "tag-alert");
+                lastLoggedWaterState = waterState;
+                lastLoggedLevel = level;
+                return;
+            }
+            
+            // Water detected event - YELLOW tag
+            if (activeSensors.length > 0 && waterState !== lastLoggedWaterState) {
+                addLog(`💧 WATER DETECTED - ${waterState} level | Flood Level ${level} (${levelNames[level]})`, "tag-water");
+                lastLoggedWaterState = waterState;
+                lastLoggedLevel = level;
+                return;
+            }
+            
+            // Level change event - ORANGE tag
+            if (level !== lastLoggedLevel && lastLoggedLevel !== -1) {
+                if (level === 0) {
+                    addLog(`✅ BACK TO NORMAL - All clear (Level ${level})`, "tag-normal");
+                } else {
+                    addLog(`📊 LEVEL CHANGE - ${levelNames[level]} (Level ${level})`, "tag-event");
+                }
+                lastLoggedLevel = level;
+                return;
+            }
+            
+            // First time seeing data - NORMAL tag
+            if (lastLoggedLevel === -1) {
+                addLog(`📡 INITIAL STATUS - ${levelNames[level]} (Level ${level})`, "tag-normal");
+                lastLoggedLevel = level;
+                lastLoggedWaterState = waterState;
+            }
+            
         } catch (e) {
-            // Try to parse as plain text alert
+            // Handle plain text alerts
             if (msg.destinationName.includes("alert")) {
                 const lvl = parseInt(msg.payloadString);
-                if (!isNaN(lvl)) {
+                if (!isNaN(lvl) && lvl !== lastLoggedLevel) {
                     updateUI(lvl);
-                    addLog(`ALERT: Flood level changed to ${lvl}`, "tag-alert");
-                } else {
-                    addLog(`Raw alert: ${msg.payloadString}`, "tag-alert");
+                    const levelNames = ["NORMAL", "WARNING", "SEVERE", "CRITICAL"];
+                    if (lvl === 0) {
+                        addLog(`✅ BACK TO NORMAL - All clear`, "tag-normal");
+                    } else {
+                        addLog(`🚨 ALERT - ${levelNames[lvl]} (Level ${lvl})`, "tag-alert");
+                    }
+                    lastLoggedLevel = lvl;
                 }
-            } else {
-                addLog(`Data received: ${msg.payloadString.substring(0, 100)}`, "tag-health");
             }
         }
     };
 
     client.onConnectionLost = (err) => {
-        console.log("Connection lost:", err);
-        addLog("LINK INTERRUPTED - Retrying connection...", "tag-alert");
+        addLog("🔌 CONNECTION LOST - Reconnecting...", "tag-system");
         setTimeout(connect, 5000);
     };
 
@@ -298,25 +354,21 @@
             mqttVersion: 4,
             onSuccess: () => {
                 client.subscribe("flood/#");
-                addLog("MQTT BROKER LINK ESTABLISHED", "tag-health");
+                addLog("✅ MQTT CONNECTED", "tag-system");
                 resetWatchdog();
             },
             onFailure: (err) => {
-                console.log("Connection failed:", err);
-                addLog("MQTT connection failed - Retrying...", "tag-alert");
                 setTimeout(connect, 5000);
             }
         });
     }
 
-    // Initialize
     loadSavedHistory();
     connect();
     
-    // If no logs after load, add initial message
     setTimeout(() => {
         if (document.getElementById("logList").children.length === 0) {
-            addLog("Station monitoring active - Waiting for telemetry", "tag-health");
+            addLog("🟢 Station monitoring active", "tag-system");
         }
     }, 1000);
 </script>
