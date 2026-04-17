@@ -44,18 +44,25 @@
         .log-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #27272a; }
         
         .log-list { max-height: 400px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 12px; }
-        .log-item { padding: 10px 0; border-bottom: 1px solid #27272a; display: flex; justify-content: space-between; }
+        .log-item { padding: 10px 0; border-bottom: 1px solid #27272a; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
         
         .log-btn { background: #27272a; border: none; color: white; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; transition: 0.2s; }
         .log-btn:hover { background: #3f3f46; }
         .btn-export { background: var(--ndrrmc-green); }
         .btn-export:hover { background: #3d8b40; }
 
-        .type-tag { padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-right: 10px; font-weight: bold; }
+        .type-tag { padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-right: 10px; font-weight: bold; display: inline-block; }
         .tag-alert { background: var(--ndrrmc-red); color: white; }
         .tag-health { background: #3f3f46; color: #a1a1aa; }
 
         .critical-glow { box-shadow: 0 0 50px rgba(244, 67, 54, 0.25); border: 1px solid var(--ndrrmc-red); }
+        
+        @media (max-width: 768px) {
+            .level-number { font-size: 70px; }
+            .warning-label { font-size: 16px; }
+            .header-content { flex-direction: column; text-align: center; gap: 10px; }
+            .log-item { flex-direction: column; align-items: flex-start; gap: 5px; }
+        }
     </style>
 </head>
 <body>
@@ -88,7 +95,7 @@
     <div class="log-section">
         <div class="log-header">
             <h3 style="font-size: 14px; color: #fff;">STATION HISTORY (MAX 2,000)</h3>
-            <div style="display:flex; gap:10px;">
+            <div style="display:flex; gap:10px; flex-wrap: wrap;">
                 <button class="log-btn btn-export" onclick="exportToCSV()"><i class="fas fa-download"></i> EXPORT CSV</button>
                 <button class="log-btn" onclick="clearLogs()"><i class="fas fa-trash"></i> CLEAR</button>
             </div>
@@ -169,8 +176,11 @@
         const item = document.createElement("div");
         item.className = "log-item";
         item.innerHTML = `
-            <span><span class="type-tag ${tagClass}">${tagClass === 'tag-alert' ? 'ALERT' : 'HEALTH'}</span> ${msg}</span>
-            <span style="color:#52525b">${new Date().toLocaleTimeString()}</span>
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                <span class="type-tag ${tagClass}">${tagClass === 'tag-alert' ? 'ALERT' : 'HEALTH'}</span>
+                <span>${msg}</span>
+            </div>
+            <span style="color:#52525b; font-size: 11px;">${new Date().toLocaleTimeString()}</span>
         `;
         list.insertBefore(item, list.firstChild);
         if (list.children.length > MQTT_CONFIG.visibleLogs) list.removeChild(list.lastChild);
@@ -184,7 +194,9 @@
         history.forEach(log => {
             const d = new Date(log.timestamp);
             const type = log.type === 'tag-alert' ? "ALERT" : "HEALTH";
-            csv += `${log.timestamp},${d.toLocaleDateString()},${d.toLocaleTimeString()},${type},${log.message.replace(/,/g, ";")}\n`;
+            // Escape commas in message
+            const cleanMsg = log.message.replace(/,/g, ";");
+            csv += `${log.timestamp},${d.toLocaleDateString()},${d.toLocaleTimeString()},${type},${cleanMsg}\n`;
         });
 
         const blob = new Blob([csv], { type: 'text/csv' });
@@ -193,6 +205,7 @@
         a.href = url;
         a.download = `Pototan_Flood_Report_${new Date().toISOString().slice(0,10)}.csv`;
         a.click();
+        window.URL.revokeObjectURL(url);
         addLog("Data history exported to CSV file", "tag-health");
     }
 
@@ -201,6 +214,31 @@
             localStorage.removeItem("flood_history");
             document.getElementById("logList").innerHTML = "";
             addLog("System logs cleared by administrator", "tag-health");
+        }
+    }
+
+    function loadSavedHistory() {
+        const savedHistory = JSON.parse(localStorage.getItem("flood_history") || "[]");
+        if (savedHistory.length > 0) {
+            // Display last known state (check for level in message)
+            const lastAlert = savedHistory.find(log => log.message.includes("Level"));
+            if (lastAlert) {
+                const levelMatch = lastAlert.message.match(/Level\s+(\d)/);
+                if (levelMatch) updateUI(parseInt(levelMatch[1]));
+            }
+            // Load logs into UI (most recent first)
+            savedHistory.slice(0, MQTT_CONFIG.visibleLogs).forEach(log => {
+                const item = document.createElement("div");
+                item.className = "log-item";
+                item.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <span class="type-tag ${log.type}">${log.type === 'tag-alert' ? 'ALERT' : 'HEALTH'}</span>
+                        <span>${log.message}</span>
+                    </div>
+                    <span style="color:#52525b; font-size: 11px;">${new Date(log.timestamp).toLocaleTimeString()}</span>
+                `;
+                document.getElementById("logList").appendChild(item);
+            });
         }
     }
 
@@ -214,20 +252,40 @@
             updateUI(level);
 
             if (data.heartbeat) {
-                addLog(`Health Check: Lvl ${level} | RSSI: ${data.rssi}dBm | Uptime: ${data.uptime}m`, "tag-health");
+                addLog(`Heartbeat received - Current flood level: ${level}`, "tag-health");
+            } else if (data.evacuate !== undefined || data.sensor1 !== undefined) {
+                // This is a status update
+                const sensorStatus = [];
+                if (data.sensor1 === 1) sensorStatus.push("Sensor 1");
+                if (data.sensor2 === 1) sensorStatus.push("Sensor 2");
+                if (data.sensor3 === 1) sensorStatus.push("Sensor 3");
+                
+                if (sensorStatus.length > 0) {
+                    addLog(`ALERT: Water detected on ${sensorStatus.join(", ")} - Level ${level}`, "tag-alert");
+                } else {
+                    addLog(`Status update - Flood level: ${level}`, "tag-health");
+                }
             } else {
-                addLog(`CRITICAL: Inbound Alert - Level ${level}`, "tag-alert");
+                addLog(`Telemetry received - Flood level: ${level}`, "tag-health");
             }
         } catch (e) {
+            // Try to parse as plain text alert
             if (msg.destinationName.includes("alert")) {
                 const lvl = parseInt(msg.payloadString);
-                updateUI(lvl);
-                addLog(`Manual Override Alert: Level ${lvl}`, "tag-alert");
+                if (!isNaN(lvl)) {
+                    updateUI(lvl);
+                    addLog(`ALERT: Flood level changed to ${lvl}`, "tag-alert");
+                } else {
+                    addLog(`Raw alert: ${msg.payloadString}`, "tag-alert");
+                }
+            } else {
+                addLog(`Data received: ${msg.payloadString.substring(0, 100)}`, "tag-health");
             }
         }
     };
 
-    client.onConnectionLost = () => {
+    client.onConnectionLost = (err) => {
+        console.log("Connection lost:", err);
         addLog("LINK INTERRUPTED - Retrying connection...", "tag-alert");
         setTimeout(connect, 5000);
     };
@@ -241,15 +299,26 @@
             onSuccess: () => {
                 client.subscribe("flood/#");
                 addLog("MQTT BROKER LINK ESTABLISHED", "tag-health");
+                resetWatchdog();
             },
-            onFailure: () => setTimeout(connect, 5000)
+            onFailure: (err) => {
+                console.log("Connection failed:", err);
+                addLog("MQTT connection failed - Retrying...", "tag-alert");
+                setTimeout(connect, 5000);
+            }
         });
     }
 
     // Initialize
-    const savedHistory = JSON.parse(localStorage.getItem("flood_history") || "[]");
-    if(savedHistory.length) updateUI(savedHistory[0].message.includes("Level 3") ? 3 : 0); // Simplified last state
+    loadSavedHistory();
     connect();
+    
+    // If no logs after load, add initial message
+    setTimeout(() => {
+        if (document.getElementById("logList").children.length === 0) {
+            addLog("Station monitoring active - Waiting for telemetry", "tag-health");
+        }
+    }, 1000);
 </script>
 
 </body>
