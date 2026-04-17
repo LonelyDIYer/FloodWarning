@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>NDRRMC Standard Flood Monitor</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+    
+    <style>
+        :root {
+            --ndrrmc-yellow: #ffeb3b;
+            --ndrrmc-orange: #ff9800;
+            --ndrrmc-red: #f44336;
+            --ndrrmc-green: #4caf50;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background: #0a0a0c; color: #fff; min-height: 100vh; }
+        
+        .header { background: #121214; border-bottom: 4px solid var(--ndrrmc-red); padding: 15px 30px; }
+        .header-content { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; }
+        
+        .station-info { display: flex; align-items: center; gap: 15px; }
+        .station-status-pill { padding: 5px 12px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+        .status-online { background: rgba(76, 175, 80, 0.2); color: var(--ndrrmc-green); border: 1px solid var(--ndrrmc-green); }
+        .status-offline { background: rgba(244, 67, 54, 0.2); color: var(--ndrrmc-red); border: 1px solid var(--ndrrmc-red); }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        
+        .main-display {
+            background: #18181b;
+            border-radius: 12px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 20px;
+            transition: 0.5s;
+        }
+
+        .level-number { font-size: 100px; font-weight: 800; margin: 10px 0; }
+        .warning-label { font-size: 24px; font-weight: 700; padding: 10px 25px; border-radius: 8px; display: inline-block; }
+        .instruction-text { margin-top: 15px; color: #a1a1aa; font-size: 14px; }
+
+        .progress-container { background: #27272a; height: 12px; border-radius: 6px; margin: 30px 0; overflow: hidden; }
+        .progress-bar { height: 100%; width: 0%; transition: 1s cubic-bezier(0.4, 0, 0.2, 1); }
+
+        .log-section { background: #18181b; border-radius: 12px; padding: 20px; }
+        .log-list { max-height: 300px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 12px; }
+        .log-item { padding: 8px 0; border-bottom: 1px solid #27272a; display: flex; justify-content: space-between; }
+        
+        .type-tag { padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-right: 10px; }
+        .tag-alert { background: var(--ndrrmc-red); color: white; }
+        .tag-health { background: #3f3f46; color: #a1a1aa; }
+
+        .critical-glow { box-shadow: 0 0 40px rgba(244, 67, 54, 0.3); border: 1px solid var(--ndrrmc-red); }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div class="header-content">
+        <div class="station-info">
+            <i class="fas fa-broadcast-tower" style="color:var(--ndrrmc-red); font-size: 24px;"></i>
+            <div>
+                <h1 style="font-size: 18px; letter-spacing: 1px;">DRM FLOOD MONITORING
+                <p style="font-size: 10px; color: #71717a;">NDRRMC COLOR-CODED PROTOCOL</p>
+            </div>
+        </div>
+        <div id="stationPill" class="station-status-pill status-offline">Station Offline</div>
+    </div>
+</div>
+
+<div class="container">
+    <div class="main-display" id="displayCard">
+        <p id="lastSeen" style="font-size: 11px; color: #71717a;">WAITING FOR DATA...</p>
+        <div class="level-number" id="levelNum">—</div>
+        <div class="warning-label" id="warningLabel">INITIALIZING</div>
+        <p class="instruction-text" id="instructionText">Connecting to the station sensors...</p>
+        
+        <div class="progress-container">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+    </div>
+
+    <div class="log-section">
+        <h3 style="font-size: 14px; margin-bottom: 15px; color: #a1a1aa;">STATION LOGS</h3>
+        <div class="log-list" id="logList"></div>
+    </div>
+</div>
+
+<script>
+    // MQTT Config
+    const config = {
+        host: "b01384c7f4aa43c2a7950f4fd7c8bb18.s1.eu.hivemq.cloud",
+        port: 8884,
+        user: "subscriber_flood",
+        pass: "User1234"
+    };
+
+    let stationTimeout;
+    const client = new Paho.MQTT.Client(config.host, config.port, "web_monitor_" + Math.random().toString(16).slice(2, 8));
+
+    // NDRRMC Protocols
+    const PROTOCOLS = [
+        { label: "NORMAL", color: "#4caf50", msg: "No immediate threat. Continuous monitoring active.", level: "0" },
+        { label: "YELLOW (AWARENESS)", color: "#ffeb3b", msg: "Monitor river levels. Flooding is possible in low-lying areas.", level: "1" },
+        { label: "ORANGE (PREPAREDNESS)", color: "#ff9800", msg: "Flooding is threatening. Prepare for possible evacuation.", level: "2" },
+        { label: "RED (EMERGENCY)", color: "#f44336", msg: "Severe flooding expected. Evacuate immediately!", level: "3" }
+    ];
+
+    function updateStationStatus(isOnline) {
+        const pill = document.getElementById("stationPill");
+        pill.innerText = isOnline ? "Station Online" : "Station Offline / Down";
+        pill.className = `station-status-pill ${isOnline ? 'status-online' : 'status-offline'}`;
+        
+        if (!isOnline) {
+            document.getElementById("instructionText").innerText = "Lost connection to field station. Data may be stale.";
+            addLog("STATION LINK LOST", "tag-alert");
+        }
+    }
+
+    function resetWatchdog() {
+        clearTimeout(stationTimeout);
+        updateStationStatus(true);
+        // Set timeout to 35 seconds (ESP sends every 30s)
+        stationTimeout = setTimeout(() => {
+            updateStationStatus(false);
+        }, 35000);
+    }
+
+    function updateUI(level) {
+        const data = PROTOCOLS[level] || PROTOCOLS[0];
+        const card = document.getElementById("displayCard");
+        const label = document.getElementById("warningLabel");
+        const bar = document.getElementById("progressBar");
+        
+        document.getElementById("levelNum").innerText = level;
+        document.getElementById("levelNum").style.color = data.color;
+        label.innerText = data.label;
+        label.style.background = level == 1 ? "#000" : data.color; // Contrast for yellow
+        label.style.color = level == 1 ? data.color : "#000";
+        
+        document.getElementById("instructionText").innerText = data.msg;
+        document.getElementById("lastSeen").innerText = "LATEST DATA RECEIVED AT " + new Date().toLocaleTimeString();
+        
+        bar.style.width = (level / 3 * 100) + "%";
+        bar.style.backgroundColor = data.color;
+        
+        if (level >= 2) card.classList.add("critical-glow");
+        else card.classList.remove("critical-glow");
+    }
+
+    function addLog(msg, tagClass) {
+        const list = document.getElementById("logList");
+        const item = document.createElement("div");
+        item.className = "log-item";
+        item.innerHTML = `
+            <span><span class="type-tag ${tagClass}">${tagClass === 'tag-alert' ? 'ALERT' : 'HEALTH'}</span> ${msg}</span>
+            <span style="color:#52525b">${new Date().toLocaleTimeString()}</span>
+        `;
+        list.insertBefore(item, list.firstChild);
+    }
+
+    client.onMessageArrived = (message) => {
+        resetWatchdog();
+        const topic = message.destinationName;
+        const payload = message.payloadString;
+
+        try {
+            const data = JSON.parse(payload);
+            const level = data.level !== undefined ? data.level : 0;
+            updateUI(level);
+
+            if (data.heartbeat) {
+                addLog(`System Health Check: Station reporting Level ${level}`, "tag-health");
+            } else {
+                addLog(`Inbound Telemetry: Flood Alert Level ${level}`, "tag-alert");
+            }
+        } catch (e) {
+            // Fallback for raw text alert topic
+            if (topic.includes("alert")) {
+                const level = parseInt(payload);
+                updateUI(level);
+                addLog(`Direct Alert: Level ${level}`, "tag-alert");
+            }
+        }
+    };
+
+    client.onConnectionLost = () => {
+        addLog("BROKER DISCONNECTED", "tag-alert");
+        setTimeout(connect, 5000);
+    };
+
+    function connect() {
+        client.connect({
+            userName: config.user,
+            password: config.pass,
+            useSSL: true,
+            mqttVersion: 4,
+            onSuccess: () => {
+                client.subscribe("flood/#");
+                addLog("MQTT LINK ESTABLISHED", "tag-health");
+            },
+            onFailure: () => setTimeout(connect, 5000)
+        });
+    }
+
+    connect();
+</script>
+
+</body>
+</html>
