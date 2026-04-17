@@ -11,11 +11,10 @@
     
     <style>
         :root {
+            --ndrrmc-green: #4caf50;
             --ndrrmc-yellow: #ffeb3b;
             --ndrrmc-orange: #ff9800;
             --ndrrmc-red: #f44336;
-            --ndrrmc-green: #4caf50;
-            --ndrrmc-blue: #2196f3;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -24,7 +23,7 @@
         .header { background: #121214; border-bottom: 4px solid var(--ndrrmc-red); padding: 15px 30px; }
         .header-content { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; }
         
-        .station-status-pill { padding: 5px 12px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; transition: 0.3s; }
+        .station-status-pill { padding: 5px 12px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
         .status-online { background: rgba(76, 175, 80, 0.2); color: var(--ndrrmc-green); border: 1px solid var(--ndrrmc-green); }
         .status-offline { background: rgba(244, 67, 54, 0.2); color: var(--ndrrmc-red); border: 1px solid var(--ndrrmc-red); }
 
@@ -33,13 +32,14 @@
         .main-display {
             background: #18181b; border-radius: 12px; padding: 40px; text-align: center; margin-bottom: 20px;
             border: 1px solid #27272a;
+            transition: all 0.3s ease;
         }
 
-        .level-number { font-size: 120px; font-weight: 800; margin: 10px 0; line-height: 1; }
-        .warning-label { font-size: 24px; font-weight: 700; padding: 10px 25px; border-radius: 8px; display: inline-block; }
+        .level-number { font-size: 120px; font-weight: 800; margin: 10px 0; line-height: 1; transition: color 0.3s ease; }
+        .warning-label { font-size: 24px; font-weight: 700; padding: 10px 25px; border-radius: 8px; display: inline-block; transition: all 0.3s ease; }
         
         .progress-container { background: #27272a; height: 16px; border-radius: 8px; margin: 30px 0; overflow: hidden; }
-        .progress-bar { height: 100%; width: 0%; transition: 1s cubic-bezier(0.4, 0, 0.2, 1); }
+        .progress-bar { height: 100%; width: 0%; transition: width 0.5s ease, background-color 0.3s ease; }
 
         .log-section { background: #18181b; border-radius: 12px; padding: 20px; border: 1px solid #27272a; }
         .log-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #27272a; flex-wrap: wrap; gap: 10px; }
@@ -52,15 +52,17 @@
         .btn-export { background: var(--ndrrmc-green); }
         .btn-export:hover { background: #3d8b40; }
 
-        /* DISTINCT LOG TYPE COLORS */
-        .type-tag { padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-right: 10px; font-weight: bold; display: inline-block; }
-        .tag-alert { background: var(--ndrrmc-red); color: white; }           /* RED - Critical alerts */
-        .tag-event { background: var(--ndrrmc-orange); color: #000; }        /* ORANGE - Level changes */
-        .tag-water { background: var(--ndrrmc-yellow); color: #000; }        /* YELLOW - Water detected */
-        .tag-normal { background: var(--ndrrmc-green); color: #000; }        /* GREEN - Normal status */
-        .tag-system { background: #3f3f46; color: #a1a1aa; }                 /* GRAY - System messages */
+        /* LOG TYPE COLORS */
+        .type-tag { padding: 2px 8px; border-radius: 3px; font-size: 10px; margin-right: 10px; font-weight: bold; display: inline-block; }
+        .tag-alert { background: var(--ndrrmc-red); color: white; }
+        .tag-event { background: var(--ndrrmc-orange); color: #000; }
+        .tag-water { background: var(--ndrrmc-yellow); color: #000; }
+        .tag-normal { background: var(--ndrrmc-green); color: #000; }
+        .tag-system { background: #3f3f46; color: #a1a1aa; }
 
         .critical-glow { box-shadow: 0 0 50px rgba(244, 67, 54, 0.25); border: 1px solid var(--ndrrmc-red); }
+        .warning-glow { box-shadow: 0 0 30px rgba(255, 235, 59, 0.2); border: 1px solid var(--ndrrmc-yellow); }
+        .severe-glow { box-shadow: 0 0 40px rgba(255, 152, 0, 0.25); border: 1px solid var(--ndrrmc-orange); }
         
         @media (max-width: 768px) {
             .level-number { font-size: 70px; }
@@ -123,16 +125,15 @@
     };
 
     let watchdogTimer;
-    let lastHeartbeatTime = 0;
     let lastLoggedLevel = -1;
     let lastLoggedWaterState = "";
     const client = new Paho.MQTT.Client(MQTT_CONFIG.host, MQTT_CONFIG.port, "pototan_web_" + Math.random().toString(16).slice(2, 8));
 
     const PROTOCOLS = [
-        { label: "NORMAL", color: "#4caf50", msg: "No flood threat detected. Water levels are within safe limits." },
-        { label: "YELLOW (AWARENESS)", color: "#ffeb3b", msg: "Low-lying areas should monitor river levels. Flooding is possible." },
-        { label: "ORANGE (PREPAREDNESS)", color: "#ff9800", msg: "Flooding is threatening. Communities are advised to prepare for evacuation." },
-        { label: "RED (EMERGENCY)", color: "#f44336", msg: "SEVERE FLOODING. Evacuate immediately to designated centers!" }
+        { label: "NORMAL", color: "#4caf50", bg: "rgba(76, 175, 80, 0.15)", msg: "No flood threat detected. Water levels are within safe limits.", level: 0 },
+        { label: "YELLOW (AWARENESS)", color: "#ffeb3b", bg: "rgba(255, 235, 59, 0.15)", msg: "Low-lying areas should monitor river levels. Flooding is possible.", level: 1 },
+        { label: "ORANGE (PREPAREDNESS)", color: "#ff9800", bg: "rgba(255, 152, 0, 0.15)", msg: "Flooding is threatening. Communities are advised to prepare for evacuation.", level: 2 },
+        { label: "RED (EMERGENCY)", color: "#f44336", bg: "rgba(244, 67, 54, 0.15)", msg: "SEVERE FLOODING. Evacuate immediately to designated centers!", level: 3 }
     ];
 
     function resetWatchdog() {
@@ -151,23 +152,36 @@
         const data = PROTOCOLS[level] || PROTOCOLS[0];
         const card = document.getElementById("displayCard");
         
-        document.getElementById("levelNum").innerText = level;
-        document.getElementById("levelNum").style.color = data.color;
+        // Update level number with color
+        const levelNum = document.getElementById("levelNum");
+        levelNum.innerText = level;
+        levelNum.style.color = data.color;
         
+        // Update warning label
         const label = document.getElementById("warningLabel");
         label.innerText = data.label;
-        label.style.background = level == 1 ? "#000" : data.color;
-        label.style.color = level == 1 ? data.color : "#000";
+        label.style.background = level === 1 ? "#1a1a1a" : data.color;
+        label.style.color = level === 1 ? data.color : (level === 0 ? "#000" : "#fff");
+        label.style.border = level === 1 ? `1px solid ${data.color}` : "none";
         
+        // Update instruction text
         document.getElementById("instructionText").innerText = data.msg;
         document.getElementById("lastSeen").innerHTML = "LAST UPDATE: " + new Date().toLocaleTimeString();
         
+        // Update progress bar
         const bar = document.getElementById("progressBar");
-        bar.style.width = (level / 3 * 100) + "%";
+        const percentage = (level / 3) * 100;
+        bar.style.width = percentage + "%";
         bar.style.backgroundColor = data.color;
         
-        if (level >= 2) card.classList.add("critical-glow");
-        else card.classList.remove("critical-glow");
+        // Update glow effects based on level
+        card.classList.remove("critical-glow", "warning-glow", "severe-glow");
+        if (level === 1) card.classList.add("warning-glow");
+        else if (level === 2) card.classList.add("severe-glow");
+        else if (level === 3) card.classList.add("critical-glow");
+        
+        // Update card background tint
+        card.style.background = `linear-gradient(135deg, #18181b, ${data.bg})`;
     }
 
     function addLog(msg, tagClass) {
@@ -264,7 +278,7 @@
         }
     }
 
-    // MQTT Connection - SINGLE LOG ENTRY PER EVENT
+    // MQTT Connection
     client.onMessageArrived = (msg) => {
         resetWatchdog();
         
@@ -272,7 +286,6 @@
             const data = JSON.parse(msg.payloadString);
             const level = data.level !== undefined ? data.level : 0;
             
-            lastHeartbeatTime = Date.now();
             updateUI(level);
             
             // Heartbeat: No log entry
@@ -289,7 +302,7 @@
             const waterState = activeSensors.join("/");
             const levelNames = ["NORMAL", "WARNING", "SEVERE", "CRITICAL"];
             
-            // Evacuation order (highest priority) - CRITICAL
+            // Evacuation order (highest priority)
             if (data.evacuate === true) {
                 addLog(`🚨 EVACUATION ORDER - Level ${level} (${levelNames[level]})`, "tag-alert");
                 lastLoggedWaterState = waterState;
@@ -297,7 +310,7 @@
                 return;
             }
             
-            // Water detected event - YELLOW tag
+            // Water detected event
             if (activeSensors.length > 0 && waterState !== lastLoggedWaterState) {
                 addLog(`💧 WATER DETECTED - ${waterState} level | Flood Level ${level} (${levelNames[level]})`, "tag-water");
                 lastLoggedWaterState = waterState;
@@ -305,7 +318,7 @@
                 return;
             }
             
-            // Level change event - ORANGE tag
+            // Level change event
             if (level !== lastLoggedLevel && lastLoggedLevel !== -1) {
                 if (level === 0) {
                     addLog(`✅ BACK TO NORMAL - All clear (Level ${level})`, "tag-normal");
@@ -316,7 +329,7 @@
                 return;
             }
             
-            // First time seeing data - NORMAL tag
+            // First time seeing data
             if (lastLoggedLevel === -1) {
                 addLog(`📡 INITIAL STATUS - ${levelNames[level]} (Level ${level})`, "tag-normal");
                 lastLoggedLevel = level;
