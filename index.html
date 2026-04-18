@@ -64,11 +64,21 @@
         .warning-glow { box-shadow: 0 0 30px rgba(255, 235, 59, 0.2); border: 1px solid var(--ndrrmc-yellow); }
         .severe-glow { box-shadow: 0 0 40px rgba(255, 152, 0, 0.25); border: 1px solid var(--ndrrmc-orange); }
         
+        /* New compact date-time style */
+        .log-datetime {
+            color: #52525b;
+            font-size: 10px;
+            font-family: monospace;
+            min-width: 130px;
+            text-align: right;
+        }
+        
         @media (max-width: 768px) {
             .level-number { font-size: 70px; }
             .warning-label { font-size: 16px; }
             .header-content { justify-content: center; text-align: center; }
             .log-item { flex-direction: column; align-items: flex-start; gap: 5px; }
+            .log-datetime { text-align: left; }
         }
     </style>
 </head>
@@ -136,6 +146,27 @@
         { label: "RED (EMERGENCY)", color: "#f44336", bg: "rgba(244, 67, 54, 0.15)", msg: "SEVERE FLOODING. Evacuate immediately to designated centers!", level: 3 }
     ];
 
+    // Helper function to format date and time
+    function formatDateTime(timestamp) {
+        const d = new Date(timestamp);
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const year = d.getFullYear();
+        const hours = String(d.getHours()).padStart(2, '0');
+        const minutes = String(d.getMinutes()).padStart(2, '0');
+        const seconds = String(d.getSeconds()).padStart(2, '0');
+        return `${month}/${day}/${year} ${hours}:${minutes}:${seconds}`;
+    }
+
+    // Helper to format just time for compact display (date in separate column)
+    function formatTime(timestamp) {
+        const d = new Date(timestamp);
+        const hours = String(d.getHours()).padStart(2, '0');
+        const minutes = String(d.getMinutes()).padStart(2, '0');
+        const seconds = String(d.getSeconds()).padStart(2, '0');
+        return `${hours}:${minutes}:${seconds}`;
+    }
+
     function resetWatchdog() {
         clearTimeout(watchdogTimer);
         document.getElementById("stationPill").innerText = "Online";
@@ -152,41 +183,36 @@
         const data = PROTOCOLS[level] || PROTOCOLS[0];
         const card = document.getElementById("displayCard");
         
-        // Update level number with color
         const levelNum = document.getElementById("levelNum");
         levelNum.innerText = level;
         levelNum.style.color = data.color;
         
-        // Update warning label
         const label = document.getElementById("warningLabel");
         label.innerText = data.label;
         label.style.background = level === 1 ? "#1a1a1a" : data.color;
         label.style.color = level === 1 ? data.color : (level === 0 ? "#000" : "#fff");
         label.style.border = level === 1 ? `1px solid ${data.color}` : "none";
         
-        // Update instruction text
         document.getElementById("instructionText").innerText = data.msg;
-        document.getElementById("lastSeen").innerHTML = "LAST UPDATE: " + new Date().toLocaleTimeString();
+        document.getElementById("lastSeen").innerHTML = "LAST UPDATE: " + formatDateTime(Date.now());
         
-        // Update progress bar
         const bar = document.getElementById("progressBar");
         const percentage = (level / 3) * 100;
         bar.style.width = percentage + "%";
         bar.style.backgroundColor = data.color;
         
-        // Update glow effects based on level
         card.classList.remove("critical-glow", "warning-glow", "severe-glow");
         if (level === 1) card.classList.add("warning-glow");
         else if (level === 2) card.classList.add("severe-glow");
         else if (level === 3) card.classList.add("critical-glow");
         
-        // Update card background tint
         card.style.background = `linear-gradient(135deg, #18181b, ${data.bg})`;
     }
 
     function addLog(msg, tagClass) {
         const list = document.getElementById("logList");
-        const logEntry = { timestamp: Date.now(), message: msg, type: tagClass };
+        const now = Date.now();
+        const logEntry = { timestamp: now, message: msg, type: tagClass };
 
         let history = JSON.parse(localStorage.getItem("flood_history") || "[]");
         history.unshift(logEntry);
@@ -206,11 +232,11 @@
         else typeLabel = '⚙️ SYSTEM';
         
         item.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 1;">
                 <span class="type-tag ${typeTagClass}">${typeLabel}</span>
                 <span>${msg}</span>
             </div>
-            <span style="color:#52525b; font-size: 11px;">${new Date().toLocaleTimeString()}</span>
+            <div class="log-datetime">${formatDateTime(now)}</div>
         `;
         list.insertBefore(item, list.firstChild);
         if (list.children.length > MQTT_CONFIG.visibleLogs) list.removeChild(list.lastChild);
@@ -221,8 +247,11 @@
         if (!history.length) return alert("No logs to export.");
 
         let csv = "Date,Time,Type,Message\n";
-        history.reverse().forEach(log => {
+        // Reverse to show oldest first in CSV
+        [...history].reverse().forEach(log => {
             const d = new Date(log.timestamp);
+            const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            const timeStr = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
             let type = "SYSTEM";
             if (log.type === 'tag-alert') type = "CRITICAL";
             else if (log.type === 'tag-event') type = "LEVEL CHANGE";
@@ -230,7 +259,7 @@
             else if (log.type === 'tag-normal') type = "NORMAL";
             
             const cleanMsg = log.message.replace(/,/g, ";");
-            csv += `${d.toLocaleDateString()},${d.toLocaleTimeString()},${type},${cleanMsg}\n`;
+            csv += `${dateStr},${timeStr},${type},${cleanMsg}\n`;
         });
 
         const blob = new Blob([csv], { type: 'text/csv' });
@@ -240,6 +269,7 @@
         a.download = `Pototan_Flood_Report_${new Date().toISOString().slice(0,10)}.csv`;
         a.click();
         window.URL.revokeObjectURL(url);
+        addLog("📁 Data exported to CSV", "tag-system");
     }
 
     function clearLogs() {
@@ -267,11 +297,11 @@
                 else typeLabel = '⚙️ SYSTEM';
                 
                 item.innerHTML = `
-                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 1;">
                         <span class="type-tag ${typeTagClass}">${typeLabel}</span>
                         <span>${log.message}</span>
                     </div>
-                    <span style="color:#52525b; font-size: 11px;">${new Date(log.timestamp).toLocaleTimeString()}</span>
+                    <div class="log-datetime">${formatDateTime(log.timestamp)}</div>
                 `;
                 document.getElementById("logList").appendChild(item);
             });
